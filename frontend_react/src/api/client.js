@@ -2,7 +2,12 @@
  * Lightweight REST client for the Chess Mastery Platform backend.
  *
  * Uses a Bearer JWT stored in localStorage under `cmp_token`.
+ *
+ * When REACT_APP_USE_MOCKS=true, routes all calls to a localStorage-backed mock API so the
+ * frontend can run without any backend.
  */
+
+import { createMockApi } from './mockApi';
 
 const TOKEN_KEY = 'cmp_token';
 
@@ -25,6 +30,10 @@ function getToken() {
 function setToken(token) {
   if (!token) localStorage.removeItem(TOKEN_KEY);
   else localStorage.setItem(TOKEN_KEY, token);
+}
+
+function parseBoolEnv(v) {
+  return String(v || '').toLowerCase() === 'true';
 }
 
 async function request(path, { method = 'GET', body, auth = true } = {}) {
@@ -60,8 +69,13 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   return payload;
 }
 
-// PUBLIC_INTERFACE
-export const api = {
+/**
+ * IMPORTANT: this export is the single integration point used throughout the UI.
+ * In mock mode we export a drop-in replacement API.
+ */
+const USE_MOCKS = parseBoolEnv(process.env.REACT_APP_USE_MOCKS);
+
+const restApi = {
   /** Authentication */
   auth: {
     async register({ username, email, password }) {
@@ -158,3 +172,9 @@ export const api = {
     get: getApiBaseUrl,
   },
 };
+
+// PUBLIC_INTERFACE
+export const api = USE_MOCKS ? createMockApi({ tokenKey: TOKEN_KEY }) : restApi;
+
+// PUBLIC_INTERFACE
+export const isMockMode = USE_MOCKS;

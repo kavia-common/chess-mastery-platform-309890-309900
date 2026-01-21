@@ -7,6 +7,23 @@ This project provides a minimal React template with a clean, modern UI and minim
 This frontend is configured to run **without any WebSocket integration**. Game state, matchmaking assignment, and chat
 updates are fetched via **REST polling** (using lightweight `setInterval` loops with cleanup on unmount).
 
+## Mock API mode (no backend required)
+
+You can run the frontend fully standalone by enabling mock mode:
+
+1. Set `REACT_APP_USE_MOCKS=true` (see `.env.example`)
+2. Start the app: `npm start`
+
+When mock mode is enabled:
+- All API calls are served from a localStorage-backed in-memory store (users, sessions, queue, games, chat, history, ELO).
+- The UI shows a visible **“Mock Mode”** badge in the navbar.
+
+Limitations (mock mode):
+- No real chess legality validation and no full FEN updates (moves are accepted as text/SAN and stored for history).
+- “Realtime” behavior is simulated via existing polling + small timeouts (no WebSockets).
+- Matchmaking is FIFO in a single browser profile; open two browsers/profiles to simulate two users.
+  - Demo accounts are pre-seeded: `alice / password123` and `bob / password123`.
+
 ## Features
 
 - **Lightweight**: No heavy UI frameworks - uses only vanilla CSS and React

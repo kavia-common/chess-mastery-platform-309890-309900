@@ -3,6 +3,7 @@ import './App.css';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AuthProvider, useAuth } from './state/AuthContext';
+import { isMockMode } from './api/client';
 
 import { ProtectedRoute } from './pages/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
@@ -41,6 +42,7 @@ function Navbar() {
         </nav>
 
         <div className="navRight">
+          {isMockMode ? <span className="mockBadge" aria-label="Mock Mode">Mock Mode</span> : null}
           {!isAuthed ? (
             <div className="rowGap">
               <Link to="/login" state={{ from: location }} className="navCta">
