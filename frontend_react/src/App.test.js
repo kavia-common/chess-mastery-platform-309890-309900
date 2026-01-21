@@ -8,6 +8,6 @@ test('renders app brand', () => {
       <App />
     </BrowserRouter>
   );
-  const brand = screen.getByText(/Chess Mastery/i);
-  expect(brand).toBeInTheDocument();
+  const brandLink = screen.getByRole('link', { name: /Chess Mastery/i });
+  expect(brandLink).toBeInTheDocument();
 });

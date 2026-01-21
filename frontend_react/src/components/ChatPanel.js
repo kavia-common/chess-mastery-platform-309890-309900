@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, Button, TextArea } from './ui';
 import { api } from '../api/client';
 import { useAuth } from '../state/AuthContext';
-import { useWs } from '../state/WsContext';
+
+const CHAT_POLL_MS = 2000;
 
 // PUBLIC_INTERFACE
 export function ChatPanel({ gameId, disabled }) {
-  /** In-game chat: initial history via REST, realtime updates via WS broadcasts. */
+  /** In-game chat: REST-only (polling). WebSockets are disabled in this frontend build. */
   const { user } = useAuth();
-  const { lastMessage } = useWs();
 
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -18,48 +18,42 @@ export function ChatPanel({ gameId, disabled }) {
   const listKey = useMemo(() => gameId || 'none', [gameId]);
   const endRef = useRef(null);
 
+  const load = async ({ silent = false } = {}) => {
+    if (!gameId) {
+      setMessages([]);
+      return;
+    }
+    if (!silent) setLoading(true);
+    setErr(null);
+    try {
+      const res = await api.chat.list(gameId);
+      setMessages(res.messages || []);
+    } catch (e) {
+      setErr(e.message || 'Failed to load chat');
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
+    if (!mounted) return undefined;
 
-    async function load() {
-      if (!gameId) {
-        setMessages([]);
-        return;
-      }
-      setLoading(true);
-      setErr(null);
-      try {
-        const res = await api.chat.list(gameId);
-        if (!mounted) return;
-        setMessages(res.messages || []);
-      } catch (e) {
-        if (!mounted) return;
-        setErr(e.message || 'Failed to load chat');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
+    // initial load
     load();
+
+    // lightweight polling
+    const t = setInterval(() => {
+      // silent so UI doesn't flicker
+      load({ silent: true });
+    }, CHAT_POLL_MS);
+
     return () => {
       mounted = false;
+      clearInterval(t);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listKey, gameId]);
-
-  useEffect(() => {
-    if (!gameId) return;
-    if (!lastMessage) return;
-
-    if (lastMessage.type === 'chat' && lastMessage.gameId === gameId && lastMessage.message) {
-      setMessages((prev) => [...prev, {
-        id: lastMessage.message.id,
-        game_id: gameId,
-        sender_user_id: lastMessage.message.senderUserId,
-        message_text: lastMessage.message.messageText,
-        created_at: lastMessage.message.createdAt,
-      }]);
-    }
-  }, [lastMessage, gameId]);
 
   useEffect(() => {
     // keep scrolled to bottom when messages change
@@ -73,7 +67,8 @@ export function ChatPanel({ gameId, disabled }) {
     try {
       await api.chat.send(gameId, { messageText: v });
       setText('');
-      // broadcast comes via WS; do nothing else
+      // Refresh immediately since there's no WS broadcast.
+      await load({ silent: true });
     } catch (e) {
       setErr(e.message || 'Failed to send');
     }
@@ -83,7 +78,7 @@ export function ChatPanel({ gameId, disabled }) {
     <Card className="panelCard">
       <div className="panelHeader">
         <div className="panelTitle">Chat</div>
-        <div className="panelSubtitle">{gameId ? 'In-game chat' : 'No active game'}</div>
+        <div className="panelSubtitle">{gameId ? 'In-game chat (polling)' : 'No active game'}</div>
       </div>
 
       <div className="chatBody" aria-label="Chat messages">

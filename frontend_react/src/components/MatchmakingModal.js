@@ -1,45 +1,55 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Button, Pill } from './ui';
 import { api } from '../api/client';
-import { useWs } from '../state/WsContext';
+
+const MATCHMAKING_POLL_MS = 1500;
 
 // PUBLIC_INTERFACE
 export function MatchmakingModal({ open, onClose, onMatched }) {
-  /** Join/leave queue; when WS match_found arrives, notify parent with {gameId,color}. */
-  const { lastMessage } = useWs();
+  /** Join/leave queue; REST-only polling for match assignment (WebSockets disabled). */
   const [queued, setQueued] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
 
   const title = useMemo(() => (queued ? 'Matchmaking (Queued)' : 'Matchmaking'), [queued]);
 
-  const refresh = async () => {
+  const refresh = async ({ silent = false } = {}) => {
     setErr(null);
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const res = await api.matchmaking.status();
       setQueued(Boolean(res.queued));
+
+      // Backend implementations commonly include a game id when matched.
+      // We support multiple possible shapes to avoid coupling to a single response schema.
+      const gameId = res.gameId || res.game_id || res.activeGameId || res.active_game_id;
+      const color = res.color || res.myColor || res.my_color;
+
+      if (gameId) {
+        // matched: close modal and notify parent
+        setQueued(false);
+        onMatched?.({ gameId, color: color || null });
+        onClose?.();
+      }
     } catch (e) {
       setErr(e.message || 'Failed to fetch status');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (open) refresh();
+    if (!open) return undefined;
+
+    // initial status fetch
+    refresh();
+
+    // lightweight polling while modal is open
+    const t = setInterval(() => refresh({ silent: true }), MATCHMAKING_POLL_MS);
+
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  useEffect(() => {
-    if (!lastMessage) return;
-    if (lastMessage.type === 'match_found') {
-      // server: {type:'match_found', gameId, color}
-      setQueued(false);
-      onMatched?.({ gameId: lastMessage.gameId, color: lastMessage.color });
-      onClose?.();
-    }
-  }, [lastMessage, onClose, onMatched]);
 
   const join = async () => {
     setErr(null);
@@ -88,7 +98,7 @@ export function MatchmakingModal({ open, onClose, onMatched }) {
                 Join queue
               </Button>
             )}
-            <Button variant="ghost" onClick={refresh} disabled={loading}>
+            <Button variant="ghost" onClick={() => refresh()} disabled={loading}>
               Refresh
             </Button>
           </div>
@@ -96,9 +106,13 @@ export function MatchmakingModal({ open, onClose, onMatched }) {
       }
     >
       <div className="muted">
-        Queue up for a real-time match. When a match is found, you will be redirected into the game automatically via WebSocket.
+        Queue up for a match. This frontend build uses REST-only polling to detect when a match has been assigned.
       </div>
-      {err ? <div className="inlineError" style={{ marginTop: 10 }}>{err}</div> : null}
+      {err ? (
+        <div className="inlineError" style={{ marginTop: 10 }}>
+          {err}
+        </div>
+      ) : null}
     </Modal>
   );
 }

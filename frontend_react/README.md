@@ -2,6 +2,11 @@
 
 This project provides a minimal React template with a clean, modern UI and minimal dependencies.
 
+## Note: REST-only mode (WebSockets disabled)
+
+This frontend is configured to run **without any WebSocket integration**. Game state, matchmaking assignment, and chat
+updates are fetched via **REST polling** (using lightweight `setInterval` loops with cleanup on unmount).
+
 ## Features
 
 - **Lightweight**: No heavy UI frameworks - uses only vanilla CSS and React

@@ -1,20 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, Button, Pill } from '../components/ui';
 import { Chessboard } from '../components/Chessboard';
 import { ChatPanel } from '../components/ChatPanel';
 import { MatchmakingModal } from '../components/MatchmakingModal';
 import { api } from '../api/client';
-import { useWs } from '../state/WsContext';
+
+const GAME_POLL_MS = 1200;
 
 // PUBLIC_INTERFACE
 export function GamePage() {
-  /** Main game view: matchmaking + active game + board + chat; realtime updates via WS. */
-  const { client, lastMessage, wsStatus } = useWs();
-
+  /** Main game view: matchmaking + active game + board + chat; REST-only (polling), WebSockets disabled. */
   const [matchOpen, setMatchOpen] = useState(false);
 
   const [gameId, setGameId] = useState(null);
-  const [myColor, setMyColor] = useState(null); // from match_found: 'white'|'black'
+  const [myColor, setMyColor] = useState(null); // 'white'|'black'|null
   const [game, setGame] = useState(null);
   const [loadingGame, setLoadingGame] = useState(false);
 
@@ -22,14 +21,17 @@ export function GamePage() {
   const [moveErr, setMoveErr] = useState(null);
   const [lastMoveSan, setLastMoveSan] = useState(null);
 
+  // Prevent overlapping polls
+  const pollingRef = useRef(false);
+
   const fen = game?.current_fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const status = game?.status || (gameId ? 'active' : 'waiting');
 
   const sidePanelTitle = useMemo(() => (gameId ? 'Match info' : 'Welcome'), [gameId]);
 
-  const loadGame = async (id) => {
+  const loadGame = async (id, { silent = false } = {}) => {
     if (!id) return;
-    setLoadingGame(true);
+    if (!silent) setLoadingGame(true);
     setMoveErr(null);
     try {
       const res = await api.games.getGame(id);
@@ -37,34 +39,64 @@ export function GamePage() {
     } catch (e) {
       setMoveErr(e.message || 'Failed to load game');
     } finally {
-      setLoadingGame(false);
+      if (!silent) setLoadingGame(false);
     }
   };
 
+  // On mount, attempt to resume if backend reports we are already queued/matched.
   useEffect(() => {
-    if (!client) return;
-    if (gameId) client.joinGame(gameId);
+    let mounted = true;
+
+    async function tryResumeFromStatus() {
+      try {
+        const res = await api.matchmaking.status();
+        if (!mounted) return;
+
+        const maybeGameId = res.gameId || res.game_id || res.activeGameId || res.active_game_id;
+        const maybeColor = res.color || res.myColor || res.my_color;
+
+        if (maybeGameId) {
+          setGameId(maybeGameId);
+          setMyColor(maybeColor || null);
+          await loadGame(maybeGameId);
+        }
+      } catch (_) {
+        // ignore; user might not be authed or backend might not support these fields
+      }
+    }
+
+    tryResumeFromStatus();
+
     return () => {
-      if (client && gameId) client.leaveGame(gameId);
+      mounted = false;
     };
-  }, [client, gameId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Poll game state while a game is active.
   useEffect(() => {
-    if (!lastMessage) return;
+    if (!gameId) return undefined;
 
-    if (lastMessage.type === 'move' && lastMessage.gameId === gameId) {
-      setGame((prev) => (prev ? { ...prev, current_fen: lastMessage.fenAfter, status: lastMessage.status || prev.status } : prev));
-      setLastMoveSan(lastMessage.san);
-    }
+    // initial load
+    loadGame(gameId);
 
-    if (lastMessage.type === 'game_finished' && lastMessage.gameId === gameId) {
-      setGame((prev) => (prev ? { ...prev, status: 'finished', winner_user_id: lastMessage.winnerUserId } : prev));
-    }
-  }, [lastMessage, gameId]);
+    const t = setInterval(async () => {
+      if (pollingRef.current) return;
+      pollingRef.current = true;
+      try {
+        await loadGame(gameId, { silent: true });
+      } finally {
+        pollingRef.current = false;
+      }
+    }, GAME_POLL_MS);
+
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId]);
 
   const onMatched = async ({ gameId: newId, color }) => {
     setGameId(newId);
-    setMyColor(color);
+    setMyColor(color || null);
     await loadGame(newId);
   };
 
@@ -98,6 +130,9 @@ export function GamePage() {
       const res = await api.games.submitMove(gameId, { san });
       setGame(res.game);
       setLastMoveSan(res.move?.san || san);
+
+      // No WS broadcast => refresh immediately to reflect opponent/legal-state changes.
+      await loadGame(gameId, { silent: true });
     } catch (e) {
       setMoveErr(e.message || 'Move rejected');
     } finally {
@@ -118,7 +153,7 @@ export function GamePage() {
             ) : null}
           </div>
           <div className="rowGap">
-            <Pill tone={wsStatus === 'connected' ? 'success' : 'warning'}>WS: {wsStatus}</Pill>
+            <Pill tone="neutral">Mode: REST polling</Pill>
             {gameId ? <Pill tone="neutral">Game: {gameId.slice(0, 8)}</Pill> : <Pill tone="neutral">No game</Pill>}
           </div>
         </div>
@@ -143,7 +178,8 @@ export function GamePage() {
 
           {!gameId ? (
             <div className="muted">
-              Join matchmaking to start a game. When matched, you will receive a <code>match_found</code> WebSocket event.
+              Join matchmaking to start a game. This build uses REST-only polling to detect match assignment and game
+              updates.
             </div>
           ) : (
             <div className="stack">

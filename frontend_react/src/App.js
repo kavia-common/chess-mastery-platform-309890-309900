@@ -3,7 +3,6 @@ import './App.css';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AuthProvider, useAuth } from './state/AuthContext';
-import { WsProvider } from './state/WsContext';
 
 import { ProtectedRoute } from './pages/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
@@ -72,7 +71,7 @@ function Footer() {
   return (
     <div className="footer">
       <div className="footerInner">
-        <div className="muted">Chess Mastery Platform · Real-time chess + chat.</div>
+        <div className="muted">Chess Mastery Platform · REST-only (polling for updates; WebSockets disabled).</div>
         <div className="footerLinks">
           <a href="http://localhost:3001/docs" target="_blank" rel="noreferrer">
             API Docs
@@ -131,13 +130,11 @@ function App() {
   return (
     <div className="AppShell">
       <AuthProvider>
-        <WsProvider>
-          <Navbar />
-          <main className="content">
-            <AppRoutes />
-          </main>
-          <Footer />
-        </WsProvider>
+        <Navbar />
+        <main className="content">
+          <AppRoutes />
+        </main>
+        <Footer />
       </AuthProvider>
     </div>
   );
