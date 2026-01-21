@@ -8,7 +8,14 @@ const TOKEN_KEY = 'cmp_token';
 
 function getApiBaseUrl() {
   // CRA env vars must start with REACT_APP_
-  return (process.env.REACT_APP_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');
+  // Preferred: REACT_APP_API_BASE_URL (documented in .env.example)
+  // Back-compat: REACT_APP_API_BASE (older deployments may still use this)
+  const base =
+    process.env.REACT_APP_API_BASE_URL ||
+    process.env.REACT_APP_API_BASE ||
+    'http://localhost:3001';
+
+  return String(base).replace(/\/*$/, '').replace(/\/+$/, '');
 }
 
 function getToken() {
