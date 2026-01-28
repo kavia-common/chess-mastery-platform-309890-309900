@@ -24,6 +24,83 @@ Limitations (mock mode):
 - Matchmaking is FIFO in a single browser profile; open two browsers/profiles to simulate two users.
   - Demo accounts are pre-seeded: `alice / password123` and `bob / password123`.
 
+## Architecture
+
+This repository is organized as a small multi-container system:
+
+- **frontend_react** (this folder): React SPA UI (auth, play, matchmaking, chat, leaderboards, history)
+- **backend_express**: Express REST API for auth + chess gameplay domain (matchmaking, games, chat, history, leaderboards)
+- **database_postgresql**: PostgreSQL persistence for users, games, moves, chat messages, ratings
+
+### High-level diagram (ASCII)
+
+```
++-------------------+        REST (HTTP/JSON)         +---------------------+        SQL         +----------------------+
+|  frontend_react    |  ---------------------------->  |    backend_express   |  ------------->   |  database_postgresql  |
+|  React SPA (3000)  |                                |  API server (3001)   |                  |  Postgres (5001)      |
++-------------------+  <----------------------------  +---------------------+  <-------------   +----------------------+
+        |                        (JSON responses)                 |
+        |                                                        |
+        |  Mock Mode (no backend):                                |
+        +--> localStorage-backed in-browser mock API              |
+```
+
+### Data flow
+
+**Normal (real backend) mode**
+- The **frontend** calls the **backend** via REST over HTTP (JSON).
+- Authentication uses a JWT stored in localStorage (`cmp_token`) and sent as `Authorization: Bearer <token>`.
+- Game state, matchmaking assignment, and chat updates are **polled** over REST at short intervals (REST-only mode).
+
+**Optional WebSocket note**
+- This frontend build is currently **REST-only** (WebSockets disabled).
+- If a future non-mock build adds WebSockets, the intended model is:
+  - REST for commands and initial fetches
+  - WebSockets for push updates (game + chat)
+- In the current codebase, the “realtime” feel is achieved via polling + immediate refreshes after actions.
+
+**Mock mode behavior**
+- When mock mode is enabled, the frontend does **not** call the backend at all.
+- All data lives in a localStorage-backed store in the browser (users, sessions, queue, games, chat, history, ELO).
+- Polling still runs, but it reads from the mock store; “realtime” effects are simulated with small timeouts.
+
+### Tech stack highlights
+
+- **Frontend**: React 18, react-router-dom, CRA (`react-scripts`), vanilla CSS
+- **Backend**: Node.js + Express (REST API)
+- **Database**: PostgreSQL (schema & seed documented in `database_postgresql/schema_and_seed.md`)
+- **Transport**: HTTP/JSON REST (polling-based updates in the current frontend)
+
+### Environment / preview ports
+
+- **Frontend (React dev server)**: http://localhost:3000
+- **Backend (Express)**: http://localhost:3001
+  - API docs (if enabled in backend): http://localhost:3001/docs
+  - DB health (backend route): `/health/db`
+- **Database (Postgres container)**: port **5001** (internal service; typically accessed only by backend)
+
+### Switching between mock mode and real backend
+
+The frontend chooses between mock vs real backend using environment variables.
+
+**Mock mode (no backend required)**
+1. Set:
+   - `REACT_APP_USE_MOCKS=true`
+2. Start:
+   - `npm start`
+
+**Real backend mode (uses backend_express)**
+1. Set:
+   - `REACT_APP_USE_MOCKS=false`
+   - `REACT_APP_API_BASE_URL=http://localhost:3001` (preferred)
+     - Back-compat: `REACT_APP_API_BASE` is also supported
+2. Start:
+   - `npm start`
+
+Notes:
+- Environment variables are documented in `.env.example`.
+- CRA requires all browser-exposed env vars to be prefixed with `REACT_APP_`.
+
 ## Features
 
 - **Lightweight**: No heavy UI frameworks - uses only vanilla CSS and React
